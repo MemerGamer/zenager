@@ -236,9 +236,8 @@ export default function Kanban() {
         return;
       }
 
-      setProjects((prev) =>
-        prev.map((project) => ({ ...project, issues: [] }))
-      );
+      // Get current projects state before fetching new issues
+      const currentProjects = projects();
 
       for (const repo of repositories()) {
         const repoId = `${repo.owner}/${repo.repo}`;
@@ -260,7 +259,10 @@ export default function Kanban() {
         }
       }
 
-      const categorizedIssues = categorizeIssuesByState(allIssues);
+      const categorizedIssues = categorizeIssuesByState(
+        allIssues,
+        currentProjects
+      );
 
       setProjects((prev) => {
         return prev.map((project) => {
@@ -279,7 +281,8 @@ export default function Kanban() {
   };
 
   const categorizeIssuesByState = (
-    issues: Issue[]
+    issues: Issue[],
+    existingProjects: Project[]
   ): Record<string, Issue[]> => {
     const categorized: Record<string, Issue[]> = {
       backlog: [],
@@ -290,23 +293,30 @@ export default function Kanban() {
       done: [],
     };
 
-    console.log(`Categorizing ${issues.length} issues:`);
-    issues.forEach((issue) => {
-      if (issue.state === "closed") {
-        // Closed issues go to Done
-        categorized.done.push(issue);
-        console.log(`Closed issue "${issue.title}" -> Done`);
-      } else {
-        // Open issues go to Backlog
-        categorized.backlog.push(issue);
-        console.log(`Open issue "${issue.title}" -> Backlog`);
-      }
+    // Create a map of existing issues by their ID for quick lookup
+    const existingIssuesMap = new Map<
+      number,
+      { issue: Issue; columnId: string }
+    >();
+    existingProjects.forEach((project) => {
+      project.issues.forEach((issue) => {
+        existingIssuesMap.set(issue.id, { issue, columnId: project.id });
+      });
     });
 
-    console.log(`Categorization results:`, {
-      backlog: categorized.backlog.length,
-      done: categorized.done.length,
-      total: issues.length,
+    issues.forEach((issue) => {
+      const existingIssue = existingIssuesMap.get(issue.id);
+
+      if (issue.state === "closed") {
+        // Closed issues always go to Done, regardless of previous position
+        categorized.done.push(issue);
+      } else if (existingIssue) {
+        // Preserve existing column position for open issues
+        categorized[existingIssue.columnId].push(issue);
+      } else {
+        // New open issues go to Backlog
+        categorized.backlog.push(issue);
+      }
     });
 
     return categorized;
