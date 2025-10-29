@@ -1,32 +1,34 @@
-# SolidStart
+# Zenager
 
-Everything you need to build a Solid project, powered by [`solid-start`](https://start.solidjs.com);
+<div align="center">
+  <img src="public/favicon.svg" alt="Zenager Logo" width="64" height="64">
+  <h3>A minimalistic Kanban board for project management with GitHub integration</h3>
+</div>
 
-## Creating a project
+## Installation
 
-```bash
-# create a new project in the current directory
-npm init solid@latest
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/MemerGamer/zenager.git
+   cd zenager
+   ```
 
-# create a new project in my-app
-npm init solid@latest my-app
-```
+2. Install Node.js using nvm:
+   ```bash
+   nvm install
+   nvm use
+   ```
 
-## Developing
+3. Install dependencies with Bun:
+   ```bash
+   bun install
+   ```
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+4. Start the development server:
+   ```bash
+   bun dev
+   ```
 
-```bash
-npm run dev
+## License
 
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
-```
-
-## Building
-
-Solid apps are built with _presets_, which optimise your project for deployment to different environments.
-
-By default, `npm run build` will generate a Node app that you can run with `npm start`. To use a different preset, add it to the `devDependencies` in `package.json` and specify in your `app.config.js`.
-
-## This project was created with the [Solid CLI](https://github.com/solidjs-community/solid-cli)
+[LICENSE](./LICENSE)
