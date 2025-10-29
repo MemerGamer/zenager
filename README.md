@@ -5,7 +5,36 @@
   <h3>A minimalistic Kanban board for project management with GitHub integration</h3>
 </div>
 
-## Installation
+## Quick Start with Docker
+
+The easiest way to run Zenager is using Docker:
+
+```bash
+# Run with default port (2718)
+docker run -p 2718:2718 kbalinthunor/zenager
+
+# Run with custom port mapping
+docker run -p 8080:2718 kbalinthunor/zenager
+```
+
+Then open your browser to `http://localhost:2718` (or your custom port).
+
+## Development Installation
+
+### Option 1: Docker Development
+
+Run the development server in Docker with hot reload:
+
+```bash
+# Clone the repository
+git clone https://github.com/MemerGamer/zenager.git
+cd zenager
+
+# Run development server in Docker
+docker run -p 2718:2718 -v $(pwd):/app -w /app oven/bun:1.3.0-alpine bun dev
+```
+
+### Option 2: Local Development
 
 1. Clone the repository:
 

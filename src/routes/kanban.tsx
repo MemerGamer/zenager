@@ -94,6 +94,12 @@ export default function Kanban() {
   const [isClient, setIsClient] = createSignal(false);
   const [showProjectManagement, setShowProjectManagement] = createSignal(false);
   const [isEditMode, setIsEditMode] = createSignal(false);
+  const [githubApiKey, setGithubApiKey] = makePersisted(
+    createSignal<string>(""),
+    {
+      name: "zenager-github-api-key",
+    }
+  );
 
   onMount(() => {
     setIsClient(true);
@@ -241,7 +247,8 @@ export default function Kanban() {
             const issues = await fetchGitHubIssues(
               repo.owner,
               repo.repo,
-              repo.author
+              repo.author,
+              githubApiKey()
             );
             allIssues.push(...issues);
           } catch (error) {
@@ -470,6 +477,7 @@ export default function Kanban() {
                           </span>
                         </div>
                         <button
+                          title="Remove project"
                           onClick={() => removeProject(project.id)}
                           class="p-1 text-gray-400 hover:text-red-400 rounded opacity-0 group-hover:opacity-100 transition-all"
                         >
@@ -550,6 +558,8 @@ export default function Kanban() {
           <GitHubConfig
             onAddRepository={addRepository}
             onClose={() => setShowGitHubConfig(false)}
+            githubApiKey={githubApiKey()}
+            onApiKeyChange={setGithubApiKey}
           />
         </Show>
 

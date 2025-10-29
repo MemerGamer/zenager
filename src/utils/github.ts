@@ -2,10 +2,24 @@ import type { Issue } from "~/routes/kanban";
 
 const GITHUB_API_BASE = "https://api.github.com";
 
+function buildHeaders(apiKey?: string): HeadersInit {
+  const headers: HeadersInit = {
+    Accept: "application/vnd.github.v3+json",
+    "User-Agent": "Zenager-Kanban/1.0",
+  };
+
+  if (apiKey) {
+    headers.Authorization = `token ${apiKey}`;
+  }
+
+  return headers;
+}
+
 export async function fetchGitHubIssues(
   owner: string,
   repo: string,
-  author?: string
+  author?: string,
+  apiKey?: string
 ): Promise<Issue[]> {
   const allIssues: Issue[] = [];
   let page = 1;
@@ -14,7 +28,7 @@ export async function fetchGitHubIssues(
 
   // If we have an author filter, use the Search API for more complex queries
   if (author) {
-    return await fetchIssuesWithSearchAPI(owner, repo, author);
+    return await fetchIssuesWithSearchAPI(owner, repo, author, apiKey);
   }
 
   // Otherwise, use the Issues API for simple queries
@@ -28,10 +42,7 @@ export async function fetchGitHubIssues(
 
     try {
       const response = await fetch(url.toString(), {
-        headers: {
-          Accept: "application/vnd.github.v3+json",
-          "User-Agent": "Zenager-Kanban/1.0",
-        },
+        headers: buildHeaders(apiKey),
       });
 
       if (!response.ok) {
@@ -96,7 +107,8 @@ export async function fetchGitHubIssues(
 async function fetchIssuesWithSearchAPI(
   owner: string,
   repo: string,
-  author?: string
+  author?: string,
+  apiKey?: string
 ): Promise<Issue[]> {
   const allIssues: Issue[] = [];
   let page = 1;
@@ -117,10 +129,7 @@ async function fetchIssuesWithSearchAPI(
 
     try {
       const response = await fetch(url.toString(), {
-        headers: {
-          Accept: "application/vnd.github.v3+json",
-          "User-Agent": "Zenager-Kanban/1.0",
-        },
+        headers: buildHeaders(apiKey),
       });
 
       if (!response.ok) {

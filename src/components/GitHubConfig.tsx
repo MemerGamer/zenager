@@ -1,15 +1,19 @@
 import { createSignal, Show } from "solid-js";
+import { HiSolidEye, HiSolidEyeSlash } from "solid-icons/hi";
 import type { GitHubRepo } from "~/routes/kanban";
 
 interface GitHubConfigProps {
   onAddRepository: (repo: GitHubRepo) => void;
   onClose: () => void;
+  githubApiKey: string;
+  onApiKeyChange: (key: string) => void;
 }
 
 export default function GitHubConfig(props: GitHubConfigProps) {
   const [url, setUrl] = createSignal("");
   const [isLoading, setIsLoading] = createSignal(false);
   const [error, setError] = createSignal("");
+  const [showApiKey, setShowApiKey] = createSignal(false);
 
   const parseGitHubUrl = (url: string): GitHubRepo | null => {
     try {
@@ -89,6 +93,37 @@ export default function GitHubConfig(props: GitHubConfigProps) {
         </h2>
 
         <form onSubmit={handleSubmit} class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-300 mb-2">
+              GitHub API Key (Optional)
+            </label>
+            <div class="relative">
+              <input
+                type={showApiKey() ? "text" : "password"}
+                value={props.githubApiKey}
+                onInput={(e) => {
+                  props.onApiKeyChange(e.currentTarget.value);
+                }}
+                placeholder="ghp_xxxxxxxxxxxxxxxxxxxx (for private repositories)"
+                class="w-full px-3 py-2 pr-10 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                type="button"
+                onClick={() => setShowApiKey(!showApiKey())}
+                class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300 focus:outline-none"
+                title={showApiKey() ? "Hide API key" : "Show API key"}
+              >
+                <Show when={showApiKey()} fallback={<HiSolidEye class="w-5 h-5" />}>
+                  <HiSolidEyeSlash class="w-5 h-5" />
+                </Show>
+              </button>
+            </div>
+            <p class="text-xs text-gray-400 mt-1">
+              Leave empty for public repositories. Required for private
+              repositories.
+            </p>
+          </div>
+
           <div>
             <label class="block text-sm font-medium text-gray-300 mb-2">
               GitHub Issues URL
