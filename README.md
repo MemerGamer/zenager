@@ -5,6 +5,20 @@
   <h3>A minimalistic Kanban board for project management with GitHub integration</h3>
 </div>
 
+## Features
+
+- **GitHub Integration** - Import issues from GitHub repositories with filtering support
+- **Drag & Drop** - Intuitive card and column reordering with visual feedback
+- **Custom Columns** - Create and manage custom project columns beyond the standard workflow
+- **Persistent State** - All data is automatically saved and restored between sessions
+- **Edit Mode** - Toggle between view and edit modes for board customization
+- **Multi-Repository** - Work with multiple GitHub repositories simultaneously
+- **Issue Categorization** - Automatic categorization of issues based on state and labels
+- **Custom Items** - Add custom tasks and items to any column
+- **Responsive Design** - Clean, modern interface that works on all devices
+
+> **Note:** All data is stored locally in your browser. No server-side storage or external databases are used.
+
 ## Quick Start with Docker
 
 The easiest way to run Zenager is using Docker:
