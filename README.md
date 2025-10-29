@@ -1,4 +1,4 @@
-# <img src="public/favicon.svg" alt="Zenager Logo" width="48" height="48"> Zenager
+# <img src="public/favicon.svg" alt="Zenager Logo" width="48" height="48" style="vertical-align: middle;"> Zenager
 
 <div align="center">
     <img src="public/ui.png" alt="Zenager UI Screenshot" width="100%">
