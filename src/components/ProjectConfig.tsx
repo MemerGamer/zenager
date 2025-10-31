@@ -1,10 +1,5 @@
 import { createSignal } from "solid-js";
-import type { Project } from "~/routes/kanban";
-
-interface ProjectConfigProps {
-  onAddProject: (project: Project) => void;
-  onClose: () => void;
-}
+import type { Project, ProjectConfigProps } from "~/types";
 
 export default function ProjectConfig(props: ProjectConfigProps) {
   const [name, setName] = createSignal("");

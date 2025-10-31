@@ -1,4 +1,4 @@
-import type { Issue } from "~/routes/kanban";
+import type { Issue } from "~/types";
 
 const GITHUB_API_BASE = "https://api.github.com";
 
@@ -26,12 +26,9 @@ export async function fetchGitHubIssues(
   const perPage = 100;
   let hasMore = true;
 
-  // If we have an author filter, use the Search API for more complex queries
   if (author) {
     return await fetchIssuesWithSearchAPI(owner, repo, author, apiKey);
   }
-
-  // Otherwise, use the Issues API for simple queries
   while (hasMore) {
     const url = new URL(`${GITHUB_API_BASE}/repos/${owner}/${repo}/issues`);
     url.searchParams.set("state", "all");
@@ -68,7 +65,7 @@ export async function fetchGitHubIssues(
           state: issue.state,
           labels: issue.labels.map((label: any) => ({
             name: label.name,
-            color: label.color,
+            color: label.color || "#428BCA",
           })),
           assignee: issue.assignee
             ? {
@@ -116,7 +113,6 @@ async function fetchIssuesWithSearchAPI(
   let hasMore = true;
 
   while (hasMore) {
-    // Use the Search API for complex queries
     const query = `repo:${owner}/${repo} is:issue${
       author ? ` assignee:${author}` : ""
     }`;
@@ -153,7 +149,7 @@ async function fetchIssuesWithSearchAPI(
           state: issue.state,
           labels: issue.labels.map((label: any) => ({
             name: label.name,
-            color: label.color,
+            color: label.color || "#428BCA",
           })),
           assignee: issue.assignee
             ? {
