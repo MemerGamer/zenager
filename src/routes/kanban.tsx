@@ -14,40 +14,24 @@ import {
 } from "solid-icons/hi";
 import KanbanBoard from "~/components/KanbanBoard";
 import GitHubConfig from "~/components/GitHubConfig";
+import GitLabConfig from "~/components/GitLabConfig";
 import ProjectConfig from "~/components/ProjectConfig";
 import RepositoryDropdown from "~/components/RepositoryDropdown";
 import ColumnManager from "~/components/ColumnManager";
 import CustomItemCreator from "~/components/CustomItemCreator";
 import { fetchGitHubIssues } from "~/utils/github";
+import { fetchGitLabIssues } from "~/utils/gitlab";
+import type {
+  Issue,
+  Project,
+  GitHubRepo,
+  GitLabRepo,
+  Repo,
+  DefaultColumn,
+} from "~/types";
 
-export interface Issue {
-  id: number;
-  title: string;
-  body: string;
-  state: "open" | "closed";
-  labels: Array<{ name: string; color: string }>;
-  assignee?: { login: string; avatar_url: string };
-  created_at: string;
-  updated_at: string;
-  html_url: string;
-  isCustom?: boolean; // Flag to identify custom (non-GitHub) items
-}
-
-export interface Project {
-  id: string;
-  name: string;
-  issues: Issue[];
-}
-
-export interface GitHubRepo {
-  owner: string;
-  repo: string;
-  author?: string;
-  url?: string;
-}
-
-// Standard Kanban columns
-const DEFAULT_COLUMNS = [
+export type { Issue, Project, GitHubRepo, GitLabRepo, Repo };
+const DEFAULT_COLUMNS: DefaultColumn[] = [
   { id: "backlog", name: "Backlog" },
   { id: "todo", name: "Todo" },
   { id: "in-progress", name: "In Progress" },
@@ -61,7 +45,7 @@ export default function Kanban() {
     name: "zenager-projects",
   });
   const [repositories, setRepositories] = makePersisted(
-    createSignal<GitHubRepo[]>([]),
+    createSignal<Repo[]>([]),
     {
       name: "zenager-repositories",
     }
@@ -87,6 +71,7 @@ export default function Kanban() {
   );
   const [isLoading, setIsLoading] = createSignal(false);
   const [showGitHubConfig, setShowGitHubConfig] = createSignal(false);
+  const [showGitLabConfig, setShowGitLabConfig] = createSignal(false);
   const [showProjectConfig, setShowProjectConfig] = createSignal(false);
   const [showColumnManager, setShowColumnManager] = createSignal(false);
   const [showCustomItemCreator, setShowCustomItemCreator] = createSignal(false);
@@ -98,6 +83,12 @@ export default function Kanban() {
     createSignal<string>(""),
     {
       name: "zenager-github-api-key",
+    }
+  );
+  const [gitlabApiKey, setGitlabApiKey] = makePersisted(
+    createSignal<string>(""),
+    {
+      name: "zenager-gitlab-api-key",
     }
   );
 
@@ -121,9 +112,18 @@ export default function Kanban() {
     setProjects(defaultProjects);
   };
 
-  const addRepository = (repo: GitHubRepo) => {
+  // Helper function to generate a unique ID for a repository
+  const getRepoId = (repo: Repo): string => {
+    if (repo.type === "github") {
+      return `github:${repo.owner}/${repo.repo}`;
+    } else {
+      return `gitlab:${repo.domain}/${repo.projectPath}`;
+    }
+  };
+
+  const addRepository = (repo: Repo) => {
     setRepositories((prev) => [...prev, repo]);
-    const repoId = `${repo.owner}/${repo.repo}`;
+    const repoId = getRepoId(repo);
     setSelectedRepositories((prev) => [...prev, repoId]);
     // Auto-hide project management after adding first repository
     if (repositories().length === 0) {
@@ -131,10 +131,18 @@ export default function Kanban() {
     }
   };
 
+  const addGitHubRepository = (repo: GitHubRepo) => {
+    addRepository(repo);
+  };
+
+  const addGitLabRepository = (repo: GitLabRepo) => {
+    addRepository(repo);
+  };
+
   const removeRepository = (index: number) => {
     const repo = repositories()[index];
     if (repo) {
-      const repoId = `${repo.owner}/${repo.repo}`;
+      const repoId = getRepoId(repo);
       setSelectedRepositories((prev) => prev.filter((id) => id !== repoId));
     }
     setRepositories((prev) => prev.filter((_, i) => i !== index));
@@ -142,7 +150,7 @@ export default function Kanban() {
 
   const deleteRepository = (repoId: string) => {
     setRepositories((prev) =>
-      prev.filter((repo) => `${repo.owner}/${repo.repo}` !== repoId)
+      prev.filter((repo) => getRepoId(repo) !== repoId)
     );
     setSelectedRepositories((prev) => prev.filter((id) => id !== repoId));
     setProjects((prev) =>
@@ -179,9 +187,7 @@ export default function Kanban() {
   };
 
   const selectAllRepositories = async () => {
-    setSelectedRepositories(
-      repositories().map((repo) => `${repo.owner}/${repo.repo}`)
-    );
+    setSelectedRepositories(repositories().map((repo) => getRepoId(repo)));
     // Fetch issues from all repositories
     await fetchIssuesFromRepos();
   };
@@ -240,21 +246,27 @@ export default function Kanban() {
       const currentProjects = projects();
 
       for (const repo of repositories()) {
-        const repoId = `${repo.owner}/${repo.repo}`;
+        const repoId = getRepoId(repo);
         if (selectedRepos.includes(repoId)) {
           try {
-            const issues = await fetchGitHubIssues(
-              repo.owner,
-              repo.repo,
-              repo.author,
-              githubApiKey()
-            );
-            allIssues.push(...issues);
+            if (repo.type === "github") {
+              const issues = await fetchGitHubIssues(
+                repo.owner,
+                repo.repo,
+                repo.author,
+                githubApiKey()
+              );
+              allIssues.push(...issues);
+            } else if (repo.type === "gitlab") {
+              const issues = await fetchGitLabIssues(
+                repo.domain,
+                repo.projectPath,
+                gitlabApiKey()
+              );
+              allIssues.push(...issues);
+            }
           } catch (error) {
-            console.error(
-              `Failed to fetch issues from ${repo.owner}/${repo.repo}:`,
-              error
-            );
+            console.error(`Failed to fetch issues from ${repoId}:`, error);
           }
         }
       }
@@ -364,14 +376,41 @@ export default function Kanban() {
                     <For each={selectedRepositories()}>
                       {(repoId) => {
                         const repo = repositories().find(
-                          (r) => `${r.owner}/${r.repo}` === repoId
+                          (r) => getRepoId(r) === repoId
                         );
+                        const displayName = repo
+                          ? repo.type === "github"
+                            ? `${repo.owner}/${repo.repo}`
+                            : (() => {
+                                if (!repo.projectPath) {
+                                  return "Invalid GitLab project";
+                                }
+                                try {
+                                  const hostname = new URL(repo.domain)
+                                    .hostname;
+                                  const projectName =
+                                    repo.projectPath.split("/").pop() ||
+                                    repo.projectPath;
+                                  return `${hostname}/${projectName}`;
+                                } catch {
+                                  // Fallback if domain is invalid
+                                  return repo.projectPath
+                                    ? repo.projectPath.split("/").pop() ||
+                                        repo.projectPath
+                                    : "Invalid GitLab project";
+                                }
+                              })()
+                          : repoId;
                         return (
                           <button
                             onClick={() => toggleRepository(repoId)}
-                            class="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded text-xs transition-colors"
+                            class={`${
+                              repo?.type === "gitlab"
+                                ? "bg-orange-600 hover:bg-orange-700"
+                                : "bg-blue-600 hover:bg-blue-700"
+                            } text-white px-2 py-1 rounded text-xs transition-colors`}
                           >
-                            {repo?.owner}/{repo?.repo}
+                            {displayName}
                           </button>
                         );
                       }}
@@ -387,7 +426,14 @@ export default function Kanban() {
                 class="bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded-lg transition-colors flex items-center gap-2 text-sm"
               >
                 <HiSolidFolderPlus class="w-4 h-4" />
-                Add Repo
+                Add GitHub
+              </button>
+              <button
+                onClick={() => setShowGitLabConfig(true)}
+                class="bg-orange-600 hover:bg-orange-700 px-3 py-2 rounded-lg transition-colors flex items-center gap-2 text-sm"
+              >
+                <HiSolidFolderPlus class="w-4 h-4" />
+                Add GitLab
               </button>
 
               <button
@@ -422,7 +468,7 @@ export default function Kanban() {
               <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
                 <h3 class="text-lg font-semibold text-white mb-4 flex items-center gap-2">
                   <HiSolidFolderPlus class="w-5 h-5 text-gray-400" />
-                  GitHub Integration
+                  Repository Integration
                 </h3>
                 <div class="space-y-4">
                   <RepositoryDropdown
@@ -461,7 +507,14 @@ export default function Kanban() {
                     class="w-full bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded-md transition-colors flex items-center gap-2 text-sm"
                   >
                     <HiSolidFolderPlus class="w-4 h-4" />
-                    Add Repository
+                    Add GitHub Repo
+                  </button>
+                  <button
+                    onClick={() => setShowGitLabConfig(true)}
+                    class="w-full bg-orange-600 hover:bg-orange-700 px-3 py-2 rounded-md transition-colors flex items-center gap-2 text-sm"
+                  >
+                    <HiSolidFolderPlus class="w-4 h-4" />
+                    Add GitLab Project
                   </button>
                 </div>
               </div>
@@ -531,8 +584,8 @@ export default function Kanban() {
             fallback={
               <div class="text-center py-12">
                 <p class="text-gray-400 text-lg mb-4">
-                  No projects yet. Create a project or add GitHub issues to get
-                  started.
+                  No projects yet. Create a project or add issues from GitHub or
+                  GitLab to get started.
                 </p>
                 <div class="flex gap-4 justify-center">
                   <button
@@ -546,6 +599,12 @@ export default function Kanban() {
                     class="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg transition-colors"
                   >
                     Add GitHub Issues
+                  </button>
+                  <button
+                    onClick={() => setShowGitLabConfig(true)}
+                    class="bg-orange-600 hover:bg-orange-700 px-6 py-3 rounded-lg transition-colors"
+                  >
+                    Add GitLab Issues
                   </button>
                 </div>
               </div>
@@ -566,10 +625,19 @@ export default function Kanban() {
 
         <Show when={showGitHubConfig()}>
           <GitHubConfig
-            onAddRepository={addRepository}
+            onAddRepository={addGitHubRepository}
             onClose={() => setShowGitHubConfig(false)}
             githubApiKey={githubApiKey()}
             onApiKeyChange={setGithubApiKey}
+          />
+        </Show>
+
+        <Show when={showGitLabConfig()}>
+          <GitLabConfig
+            onAddRepository={addGitLabRepository}
+            onClose={() => setShowGitLabConfig(false)}
+            gitlabApiKey={gitlabApiKey()}
+            onApiKeyChange={setGitlabApiKey}
           />
         </Show>
 

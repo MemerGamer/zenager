@@ -1,6 +1,6 @@
 import { For, Show } from "solid-js";
 import { createDraggable } from "@thisbeyond/solid-dnd";
-import type { Issue } from "~/routes/kanban";
+import type { Issue, KanbanCardProps } from "~/types";
 
 declare module "solid-js" {
   namespace JSX {
@@ -8,12 +8,6 @@ declare module "solid-js" {
       draggable: any;
     }
   }
-}
-
-interface KanbanCardProps {
-  issue: Issue;
-  projectId: string;
-  isEditMode?: boolean;
 }
 
 export default function KanbanCard(props: KanbanCardProps) {
@@ -58,16 +52,43 @@ export default function KanbanCard(props: KanbanCardProps) {
       <Show when={props.issue.labels.length > 0}>
         <div class="flex flex-wrap gap-1 mb-3">
           <For each={props.issue.labels}>
-            {(label) => (
-              <span
-                class="px-2 py-1 rounded-full text-xs font-medium"
-                style={`background-color: #${
-                  label.color
-                }; color: ${getContrastColor(label.color)}`}
-              >
-                {label.name}
-              </span>
-            )}
+            {(label) => {
+              // Ensure color has # prefix and is valid
+              let bgColor = label.color || "#428BCA"; // Default fallback color
+
+              // Handle color format
+              if (bgColor && typeof bgColor === "string") {
+                bgColor = bgColor.trim();
+                if (bgColor.startsWith("#")) {
+                  // Already has #, validate it's a proper hex color
+                  if (bgColor.length >= 4) {
+                    bgColor = bgColor;
+                  } else {
+                    bgColor = "#428BCA"; // Invalid hex, use default
+                  }
+                } else {
+                  // Add # prefix if it looks like a hex color
+                  if (/^[0-9A-Fa-f]{3,6}$/.test(bgColor)) {
+                    bgColor = `#${bgColor}`;
+                  } else {
+                    bgColor = "#428BCA"; // Invalid format, use default
+                  }
+                }
+              } else {
+                bgColor = "#428BCA"; // Invalid color, use default
+              }
+
+              return (
+                <span
+                  class="px-2 py-1 rounded-full text-xs font-medium"
+                  style={`background-color: ${bgColor}; color: ${getContrastColor(
+                    bgColor
+                  )}`}
+                >
+                  {label.name}
+                </span>
+              );
+            }}
           </For>
         </div>
       </Show>
@@ -90,14 +111,22 @@ export default function KanbanCard(props: KanbanCardProps) {
 
       <Show when={!props.issue.isCustom && props.issue.html_url}>
         <div class="mt-3">
-          <a
-            href={props.issue.html_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            class="text-blue-400 hover:text-blue-300 text-xs"
-          >
-            View on GitHub →
-          </a>
+          {(() => {
+            const isGitLab = props.issue.html_url
+              .toLowerCase()
+              .includes("gitlab");
+            const serviceName = isGitLab ? "GitLab" : "GitHub";
+            return (
+              <a
+                href={props.issue.html_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-blue-400 hover:text-blue-300 text-xs"
+              >
+                View on {serviceName} →
+              </a>
+            );
+          })()}
         </div>
       </Show>
 
