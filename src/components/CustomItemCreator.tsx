@@ -1,11 +1,5 @@
 import { createSignal, Show } from "solid-js";
-import type { Issue } from "~/routes/kanban";
-
-interface CustomItemCreatorProps {
-  projectId: string;
-  onAddItem: (projectId: string, item: Issue) => void;
-  onClose: () => void;
-}
+import type { Issue, CustomItemCreatorProps } from "~/types";
 
 export default function CustomItemCreator(props: CustomItemCreatorProps) {
   const [title, setTitle] = createSignal("");

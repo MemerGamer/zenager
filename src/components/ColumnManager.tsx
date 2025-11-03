@@ -1,12 +1,5 @@
 import { For, Show } from "solid-js";
-import type { Project } from "~/routes/kanban";
-
-interface ColumnManagerProps {
-  projects: Project[];
-  visibleColumns: string[];
-  onToggleColumn: (columnId: string) => void;
-  onClose: () => void;
-}
+import type { Project, ColumnManagerProps } from "~/types";
 
 export default function ColumnManager(props: ColumnManagerProps) {
   const isVisible = (columnId: string) =>

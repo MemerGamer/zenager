@@ -6,23 +6,44 @@ import {
   HiSolidChevronDown,
   HiSolidChevronUp,
 } from "solid-icons/hi";
-import type { GitHubRepo } from "~/routes/kanban";
-
-interface RepositoryDropdownProps {
-  repositories: GitHubRepo[];
-  selectedRepositories: string[];
-  onToggleRepository: (repoId: string) => void;
-  onDeleteRepository: (repoId: string) => void;
-  onSelectAll: () => void;
-  onSelectNone: () => void;
-}
+import type { Repo, RepositoryDropdownProps } from "~/types";
 
 export default function RepositoryDropdown(props: RepositoryDropdownProps) {
   const [isOpen, setIsOpen] = createSignal(false);
   let dropdownRef: HTMLDivElement | undefined;
 
-  const getRepoId = (repo: GitHubRepo) => `${repo.owner}/${repo.repo}`;
-  const isSelected = (repo: GitHubRepo) =>
+  const getRepoId = (repo: Repo): string => {
+    if (repo.type === "github") {
+      return `github:${repo.owner}/${repo.repo}`;
+    } else {
+      return `gitlab:${repo.domain}/${repo.projectPath}`;
+    }
+  };
+
+  const getRepoDisplayName = (repo: Repo): string => {
+    if (repo.type === "github") {
+      return `${repo.owner}/${repo.repo}`;
+    } else {
+      try {
+        const hostname = new URL(repo.domain).hostname;
+        const projectName =
+          repo.projectPath.split("/").pop() || repo.projectPath;
+        return `${hostname}/${projectName}`;
+      } catch {
+        return repo.projectPath;
+      }
+    }
+  };
+
+  const getRepoUrl = (repo: Repo): string => {
+    if (repo.type === "github") {
+      return repo.url || `https://github.com/${repo.owner}/${repo.repo}/issues`;
+    } else {
+      return repo.url || `${repo.domain}/${repo.projectPath}/-/issues`;
+    }
+  };
+
+  const isSelected = (repo: Repo) =>
     props.selectedRepositories.includes(getRepoId(repo));
 
   const handleClickOutside = (event: MouseEvent) => {
@@ -43,7 +64,7 @@ export default function RepositoryDropdown(props: RepositoryDropdownProps) {
     }
   });
 
-  const handleDelete = (repo: GitHubRepo, e: Event) => {
+  const handleDelete = (repo: Repo, e: Event) => {
     e.stopPropagation();
     const repoId = getRepoId(repo);
     props.onDeleteRepository(repoId);
@@ -122,12 +143,23 @@ export default function RepositoryDropdown(props: RepositoryDropdownProps) {
                           </button>
 
                           <div class="flex-1 min-w-0">
-                            <span class="text-white text-sm truncate block">
-                              {repo.owner}/{repo.repo}
-                            </span>
-                            <Show when={repo.author}>
+                            <div class="flex items-center gap-2">
+                              <span class="text-white text-sm truncate block">
+                                {getRepoDisplayName(repo)}
+                              </span>
+                              <span
+                                class={`text-xs px-1.5 py-0.5 rounded ${
+                                  repo.type === "gitlab"
+                                    ? "bg-orange-900 text-orange-300"
+                                    : "bg-blue-900 text-blue-300"
+                                }`}
+                              >
+                                {repo.type === "gitlab" ? "GitLab" : "GitHub"}
+                              </span>
+                            </div>
+                            <Show when={repo.type === "github" && repo.author}>
                               <p class="text-gray-400 text-xs truncate">
-                                by {repo.author}
+                                by {repo.type === "github" ? repo.author : ""}
                               </p>
                             </Show>
                           </div>
@@ -135,14 +167,13 @@ export default function RepositoryDropdown(props: RepositoryDropdownProps) {
 
                         <div class="flex items-center gap-1">
                           <a
-                            href={
-                              repo.url ||
-                              `https://github.com/${repo.owner}/${repo.repo}/issues`
-                            }
+                            href={getRepoUrl(repo)}
                             target="_blank"
                             rel="noopener noreferrer"
                             class="text-gray-400 hover:text-blue-400 p-1 transition-colors"
-                            title="Open in GitHub"
+                            title={`Open in ${
+                              repo.type === "gitlab" ? "GitLab" : "GitHub"
+                            }`}
                             onClick={(e) => e.stopPropagation()}
                           >
                             <HiSolidArrowTopRightOnSquare class="w-3 h-3" />

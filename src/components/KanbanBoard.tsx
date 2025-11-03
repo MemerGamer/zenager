@@ -7,7 +7,7 @@ import {
   createDroppable,
 } from "@thisbeyond/solid-dnd";
 import KanbanColumn from "~/components/KanbanColumn";
-import type { Project, Issue } from "~/routes/kanban";
+import type { Project, Issue, KanbanBoardProps } from "~/types";
 
 // Drop zone component for column reordering
 function DropZone(props: { projectId: string }) {
@@ -21,15 +21,6 @@ function DropZone(props: { projectId: string }) {
       <div class="w-1 h-8 bg-orange-500 opacity-0 hover:opacity-100 transition-opacity rounded"></div>
     </div>
   );
-}
-
-interface KanbanBoardProps {
-  projects: Project[];
-  onUpdateProject: (projectId: string, issues: Issue[]) => void;
-  onReorderProjects: (reorderedProjects: Project[]) => void;
-  visibleColumns: string[];
-  onAddCustomItem?: (projectId: string) => void;
-  isEditMode: boolean;
 }
 
 declare module "solid-js" {
