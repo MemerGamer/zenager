@@ -11,6 +11,8 @@ import {
   HiSolidCheck,
   HiSolidChevronDown,
   HiSolidChevronUp,
+  HiSolidArrowDownTray,
+  HiSolidArrowUpTray,
 } from "solid-icons/hi";
 import KanbanBoard from "~/components/KanbanBoard";
 import GitHubConfig from "~/components/GitHubConfig";
@@ -20,6 +22,13 @@ import ProjectConfig from "~/components/ProjectConfig";
 import RepositoryDropdown from "~/components/RepositoryDropdown";
 import ColumnManager from "~/components/ColumnManager";
 import CustomItemCreator from "~/components/CustomItemCreator";
+import {
+  buildExport,
+  exportFileName,
+  mergeImport,
+  parseAndValidateImport,
+  serializeExport,
+} from "~/utils/importExport";
 import { fetchGitHubIssues } from "~/utils/github";
 import { fetchGitLabIssues } from "~/utils/gitlab";
 import {
@@ -130,6 +139,64 @@ export default function Kanban() {
       setShowProjectManagement(false);
     }
   });
+
+  const [importMessage, setImportMessage] = createSignal<{
+    kind: "error" | "success";
+    text: string;
+  } | null>(null);
+  let importInput: HTMLInputElement | undefined;
+
+  const currentBoardState = () => ({
+    repositories: repositories(),
+    selectedRepositories: selectedRepositories(),
+    projects: projects(),
+    visibleColumns: visibleColumns(),
+  });
+
+  // API tokens are stored separately and are intentionally not exported
+  const exportBoard = () => {
+    try {
+      const now = new Date();
+      const blob = new Blob([serializeExport(buildExport(currentBoardState(), now))], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = exportFileName(now);
+      a.click();
+      URL.revokeObjectURL(url);
+      setImportMessage({ kind: "success", text: "Exported board to JSON" });
+    } catch {
+      setImportMessage({ kind: "error", text: "Export failed: current board data is invalid" });
+    }
+  };
+
+  const importBoard = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const result = parseAndValidateImport(await file.text());
+      if (!result.ok) {
+        setImportMessage({ kind: "error", text: `Import failed: ${result.error}` });
+        return;
+      }
+      // Merge into the current state (existing data wins, duplicates dropped)
+      const merged = mergeImport(currentBoardState(), result.state);
+      setRepositories(merged.repositories);
+      setSelectedRepositories(merged.selectedRepositories);
+      setProjects(merged.projects);
+      setVisibleColumns(merged.visibleColumns);
+      setImportMessage({
+        kind: "success",
+        text: `Imported ${result.state.repositories.length} repositories and ${result.state.projects.length} columns (merged)`,
+      });
+      void fetchIssuesFromRepos();
+    } catch {
+      setImportMessage({ kind: "error", text: "Import failed: could not read the file" });
+    } finally {
+      if (importInput) importInput.value = "";
+    }
+  };
 
   const initializeDefaultColumns = () => {
     const defaultProjects = DEFAULT_COLUMNS.map((column) => ({
@@ -486,6 +553,43 @@ export default function Kanban() {
                     <HiSolidFolderPlus class="w-4 h-4" />
                     Add Local Project
                   </button>
+                  <button
+                    onClick={exportBoard}
+                    class="w-full bg-gray-700 hover:bg-gray-600 px-3 py-2 rounded-md transition-colors flex items-center gap-2 text-sm"
+                    title="Download repositories, columns and items as JSON (no API tokens)"
+                  >
+                    <HiSolidArrowDownTray class="w-4 h-4" />
+                    Export Board
+                  </button>
+                  <button
+                    onClick={() => importInput?.click()}
+                    class="w-full bg-gray-700 hover:bg-gray-600 px-3 py-2 rounded-md transition-colors flex items-center gap-2 text-sm"
+                    title="Merge a Zenager export file into this board"
+                  >
+                    <HiSolidArrowUpTray class="w-4 h-4" />
+                    Import Board
+                  </button>
+                  <input
+                    ref={importInput}
+                    type="file"
+                    accept="application/json,.json"
+                    class="hidden"
+                    onChange={(e) => importBoard(e.currentTarget.files?.[0])}
+                  />
+                  <Show when={importMessage()}>
+                    {(m) => (
+                      <p
+                        role={m().kind === "error" ? "alert" : "status"}
+                        class={`text-xs rounded-md px-3 py-2 border ${
+                          m().kind === "error"
+                            ? "bg-red-900/40 border-red-700 text-red-200"
+                            : "bg-green-900/40 border-green-700 text-green-200"
+                        }`}
+                      >
+                        {m().text}
+                      </p>
+                    )}
+                  </Show>
                 </div>
               </div>
 
