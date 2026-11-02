@@ -1,13 +1,19 @@
 // Pure helpers for board/repository state. Everything here returns new arrays
 // and takes the previous state as input so it can be used inside functional
 // signal updaters (setX((prev) => fn(prev, ...))) without stale snapshots.
-import type { Issue, Project, Repo } from "~/types";
+import type { Issue, LocalRepo, Project, Repo } from "~/types";
 
 /** Stable unique key of a repository, distinct across GitHub and GitLab. */
-export const getRepoId = (repo: Repo): string =>
-  repo.type === "github"
-    ? `github:${repo.owner}/${repo.repo}`
-    : `gitlab:${repo.domain}/${repo.projectPath}`;
+export const getRepoId = (repo: Repo): string => {
+  switch (repo.type) {
+    case "github":
+      return `github:${repo.owner}/${repo.repo}`;
+    case "gitlab":
+      return `gitlab:${repo.domain}/${repo.projectPath}`;
+    case "local":
+      return `local:${repo.id}`;
+  }
+};
 
 /** Unique key of an issue: numeric ids are only unique per source. */
 export const getIssueKey = (issue: Issue): string =>
@@ -56,6 +62,77 @@ export const sanitizeSelection = (
   return uniqueBy(selected, (id) => id).filter((id) => known.has(id));
 };
 
+/* --------------------------- local projects --------------------------- */
+
+export const isLocalRepo = (repo: Repo): repo is LocalRepo =>
+  repo.type === "local";
+
+const slugify = (name: string) =>
+  name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "project";
+
+export type CreateLocalRepoResult =
+  | { ok: true; repo: LocalRepo }
+  | { ok: false; error: string };
+
+/**
+ * Build a local project from user input. Names are trimmed, must be
+ * non-empty and unique (case-insensitive) among existing local projects; the
+ * id is a slug made unique against the existing ids.
+ */
+export const createLocalRepo = (
+  existing: Repo[],
+  name: string,
+  description = ""
+): CreateLocalRepoResult => {
+  const trimmed = name.trim().replace(/\s+/g, " ");
+  if (!trimmed) return { ok: false, error: "Project name is required" };
+  const locals = existing.filter(isLocalRepo);
+  if (locals.some((r) => r.name.toLowerCase() === trimmed.toLowerCase())) {
+    return { ok: false, error: "A local project with this name already exists" };
+  }
+  const taken = new Set(locals.map((r) => r.id));
+  const base = slugify(trimmed);
+  let id = base;
+  for (let n = 2; taken.has(id); n++) id = `${base}-${n}`;
+  const desc = description.trim();
+  return {
+    ok: true,
+    repo: { type: "local", id, name: trimmed, ...(desc ? { description: desc } : {}) },
+  };
+};
+
+/** Repositories that must be fetched on sync: local projects have no remote. */
+export const getSyncableRepos = (repos: Repo[], selected: string[]): Repo[] =>
+  repos.filter((r) => !isLocalRepo(r) && selected.includes(getRepoId(r)));
+
+/**
+ * The local project new custom items should belong to: the only selected
+ * local project, if there is exactly one.
+ */
+export const getTargetLocalRepoId = (
+  repos: Repo[],
+  selected: string[]
+): string | undefined => {
+  const ids = repos
+    .filter(isLocalRepo)
+    .map(getRepoId)
+    .filter((id) => selected.includes(id));
+  return ids.length === 1 ? ids[0] : undefined;
+};
+
+/** Remove only the custom items that belong to the given local project. */
+export const removeLocalProjectItems = (
+  projects: Project[],
+  repoId: string
+): Project[] =>
+  projects.map((p) => ({
+    ...p,
+    issues: p.issues.filter((i) => !(i.isCustom && i.repoId === repoId)),
+  }));
+
 /* ------------------------------ columns ------------------------------- */
 
 export const dedupeProjects = (projects: Project[]): Project[] =>
@@ -94,8 +171,8 @@ export const updateProjectIssues = (
 
 /**
  * Remove only the issues that were fetched from the given repository
- * (plus legacy fetched issues that carry no repoId). Custom items and issues
- * of other repositories are kept.
+ * (plus legacy fetched issues that carry no repoId). Custom items (including
+ * those of local projects) and issues of other repositories are kept.
  */
 export const removeRepoIssues = (
   projects: Project[],

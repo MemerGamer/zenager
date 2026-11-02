@@ -23,6 +23,7 @@ export default function CustomItemCreator(props: CustomItemCreatorProps) {
       updated_at: new Date().toISOString(),
       html_url: "",
       isCustom: true,
+      repoId: props.repoId,
     };
 
     props.onAddItem(props.projectId, customIssue);
