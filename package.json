@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vinxi dev",
     "build": "vinxi build",
-    "start": "vinxi start"
+    "start": "vinxi start",
+    "test": "bun test"
   },
   "dependencies": {
     "@solid-primitives/storage": "^4.3.3",
