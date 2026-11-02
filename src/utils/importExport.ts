@@ -3,8 +3,10 @@
 // part of BoardState, and import re-builds every object from known fields so
 // unexpected data (e.g. a token smuggled into a file) is dropped.
 import type { Issue, Project, Repo } from "~/types";
+import { validateGitHubRepo } from "~/utils/github";
+import { validateGitLabDomain, validateGitLabProjectPath } from "~/utils/gitlab";
 import {
-  dedupeIssues,
+  getRepoId,
   dedupeProjects,
   dedupeRepositories,
   sanitizeSelection,
@@ -74,27 +76,53 @@ const strArr = (o: Obj, k: string, where: string): string[] =>
     typeof v === "string" ? v : fail(`${where}: "${k}[${i}]" must be a string`)
   );
 
+/** Only http(s) URLs may be imported ("" is allowed for custom items). */
+const safeUrl = (o: Obj, k: string, where: string, allowEmpty = false) => {
+  const v = str(o, k, where);
+  if (allowEmpty && v === "") return v;
+  try {
+    const u = new URL(v);
+    if (u.protocol === "http:" || u.protocol === "https:") return v;
+  } catch {}
+  return fail(`${where}: "${k}" must be an http(s) URL`);
+};
+const optUrl = (o: Obj, k: string, where: string) =>
+  o[k] === undefined ? undefined : safeUrl(o, k, where);
+
 const parseRepo = (v: unknown, i: number): Repo => {
   const where = `repositories[${i}]`;
   if (!isObj(v)) return fail(`${where} must be an object`);
   switch (v.type) {
     case "github": {
-      const url = optStr(v, "url", where);
+      const url = optUrl(v, "url", where);
       const author = optStr(v, "author", where);
+      const owner = nonEmpty(v, "owner", where);
+      const repo = nonEmpty(v, "repo", where);
+      if (!validateGitHubRepo(owner, repo))
+        return fail(`${where}: invalid GitHub owner or repository name`);
+      if (author !== undefined && !validateGitHubRepo(author, "x"))
+        return fail(`${where}: invalid GitHub author`);
       return {
         type: "github",
-        owner: nonEmpty(v, "owner", where),
-        repo: nonEmpty(v, "repo", where),
+        owner,
+        repo,
         ...(author !== undefined ? { author } : {}),
         ...(url !== undefined ? { url } : {}),
       };
     }
     case "gitlab": {
-      const url = optStr(v, "url", where);
+      const url = optUrl(v, "url", where);
+      const domain = nonEmpty(v, "domain", where);
+      const projectPath = nonEmpty(v, "projectPath", where);
+      // https only: the stored token is sent to this host on sync
+      if (!validateGitLabDomain(domain) || !domain.startsWith("https://"))
+        return fail(`${where}: GitLab domain must be an https URL`);
+      if (!validateGitLabProjectPath(projectPath))
+        return fail(`${where}: invalid GitLab project path`);
       return {
         type: "gitlab",
-        domain: nonEmpty(v, "domain", where),
-        projectPath: nonEmpty(v, "projectPath", where),
+        domain,
+        projectPath,
         ...(url !== undefined ? { url } : {}),
       };
     }
@@ -129,7 +157,7 @@ const parseIssue = (v: unknown, where: string): Issue => {
     if (!isObj(v.assignee)) return fail(`${aw} must be an object`);
     assignee = {
       login: str(v.assignee, "login", aw),
-      avatar_url: str(v.assignee, "avatar_url", aw),
+      avatar_url: safeUrl(v.assignee, "avatar_url", aw, true),
     };
   }
   if (v.isCustom !== undefined && typeof v.isCustom !== "boolean")
@@ -144,7 +172,7 @@ const parseIssue = (v: unknown, where: string): Issue => {
     ...(assignee ? { assignee } : {}),
     created_at: str(v, "created_at", where),
     updated_at: str(v, "updated_at", where),
-    html_url: str(v, "html_url", where),
+    html_url: safeUrl(v, "html_url", where, true),
     ...(v.isCustom !== undefined ? { isCustom: v.isCustom } : {}),
     ...(repoId !== undefined ? { repoId } : {}),
   };
@@ -227,10 +255,21 @@ export const mergeImport = (
     ...merged,
     ...imported.projects.filter((p) => !known.has(p.id)),
   ]);
+  // Never auto-select imported GitLab projects on hosts the user has not
+  // configured: selecting triggers a sync that sends the stored token there.
+  const trusted = new Set(
+    current.repositories.flatMap((r) => (r.type === "gitlab" ? [r.domain] : []))
+  );
+  const currentIds = new Set(current.repositories.map(getRepoId));
+  const importedSelection = imported.selectedRepositories.filter((id) => {
+    if (currentIds.has(id)) return true;
+    const repo = imported.repositories.find((r) => getRepoId(r) === id);
+    return !(repo?.type === "gitlab" && !trusted.has(repo.domain));
+  });
   return {
     repositories,
     selectedRepositories: sanitizeSelection(
-      [...current.selectedRepositories, ...imported.selectedRepositories],
+      [...current.selectedRepositories, ...importedSelection],
       repositories
     ),
     projects,

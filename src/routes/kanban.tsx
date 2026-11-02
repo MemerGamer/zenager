@@ -188,9 +188,8 @@ export default function Kanban() {
       setVisibleColumns(merged.visibleColumns);
       setImportMessage({
         kind: "success",
-        text: `Imported ${result.state.repositories.length} repositories and ${result.state.projects.length} columns (merged)`,
+        text: `Imported ${result.state.repositories.length} repositories and ${result.state.projects.length} columns (merged). Toggle a repository to sync its issues.`,
       });
-      void fetchIssuesFromRepos();
     } catch {
       setImportMessage({ kind: "error", text: "Import failed: could not read the file" });
     } finally {

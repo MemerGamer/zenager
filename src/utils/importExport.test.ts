@@ -15,16 +15,16 @@ const issue = (id: number, extra: Partial<Issue> = {}): Issue => ({
   body: "b",
   state: "open",
   labels: [{ name: "bug", color: "f00" }],
-  assignee: { login: "a", avatar_url: "u" },
+  assignee: { login: "a", avatar_url: "https://a.example/u.png" },
   created_at: "c",
   updated_at: "u",
-  html_url: "h",
+  html_url: "https://github.com/o/r/issues/1",
   ...extra,
 });
 
 const state = (): BoardState => ({
   repositories: [
-    { type: "github", owner: "o", repo: "r", author: "me", url: "x" },
+    { type: "github", owner: "o", repo: "r", author: "me", url: "https://github.com/o/r" },
     { type: "gitlab", domain: "https://gitlab.com", projectPath: "g/p" },
     { type: "local", id: "mine", name: "Mine", description: "d" },
   ],
@@ -117,6 +117,15 @@ describe("export/import", () => {
     bad((f) => (f.projects[1].id = 7), /id/);
   });
 
+  test("rejects unsafe urls and invalid repo identifiers", () => {
+    bad((f) => (f.repositories[1].domain = "http://gitlab.com"), /https/);
+    bad((f) => (f.repositories[1].projectPath = "a b"), /project path/);
+    bad((f) => (f.repositories[0].owner = "../x"), /GitHub/);
+    bad((f) => (f.repositories[0].url = "javascript:alert(1)"), /http\(s\)/);
+    bad((f) => (f.projects[0].issues[0].html_url = "javascript:alert(1)"), /http\(s\)/);
+    bad((f) => (f.projects[0].issues[0].assignee.avatar_url = "data:x"), /http\(s\)/);
+  });
+
   test("heals duplicates on import", () => {
     const f = valid();
     f.repositories.push(f.repositories[0]);
@@ -150,6 +159,20 @@ describe("mergeImport", () => {
     expect(m.projects.map((p) => p.id)).toEqual(["backlog", "custom-1", "extra"]);
     expect(m.projects[0].issues.map((i) => i.id)).toEqual([1, 9]);
     expect(m.visibleColumns).toEqual(["backlog", "custom-1", "extra"]);
+  });
+
+  test("does not auto-select imported GitLab projects on unknown hosts", () => {
+    const current = state();
+    const imported = state();
+    imported.repositories.push({
+      type: "gitlab",
+      domain: "https://git.other.example",
+      projectPath: "x/y",
+    });
+    imported.selectedRepositories.push("gitlab:https://git.other.example/x/y");
+    const m = mergeImport(current, imported);
+    expect(m.repositories).toHaveLength(4);
+    expect(m.selectedRepositories).not.toContain("gitlab:https://git.other.example/x/y");
   });
 
   test("current state wins and is not mutated", () => {
