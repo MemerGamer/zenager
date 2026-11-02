@@ -18,6 +18,12 @@ export default function Nav() {
             >
               Zenager
             </a>
+            <a href="/kanban" class={`${active("/kanban")} transition-colors`}>
+              Kanban
+            </a>
+            <a href="/gantt" class={`${active("/gantt")} transition-colors`}>
+              Gantt
+            </a>
           </div>
         </div>
       </div>

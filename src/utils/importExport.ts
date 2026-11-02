@@ -172,6 +172,7 @@ const parseIssue = (v: unknown, where: string): Issue => {
     ...(assignee ? { assignee } : {}),
     created_at: str(v, "created_at", where),
     updated_at: str(v, "updated_at", where),
+    ...(typeof v.closed_at === "string" ? { closed_at: v.closed_at } : {}),
     html_url: safeUrl(v, "html_url", where, true),
     ...(v.isCustom !== undefined ? { isCustom: v.isCustom } : {}),
     ...(repoId !== undefined ? { repoId } : {}),
