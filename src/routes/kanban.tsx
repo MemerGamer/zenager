@@ -21,6 +21,23 @@ import ColumnManager from "~/components/ColumnManager";
 import CustomItemCreator from "~/components/CustomItemCreator";
 import { fetchGitHubIssues } from "~/utils/github";
 import { fetchGitLabIssues } from "~/utils/gitlab";
+import {
+  getRepoId,
+  addRepository as addRepo,
+  removeRepository as removeRepo,
+  addSelectedRepo,
+  removeSelectedRepo,
+  sanitizeSelection,
+  dedupeRepositories,
+  dedupeProjects,
+  addProject as addColumn,
+  removeProject as removeColumn,
+  addColumnId,
+  addCustomItem as addItem,
+  updateProjectIssues,
+  removeRepoIssues,
+  mergeFetchedIssues,
+} from "~/utils/projectState";
 import type {
   Issue,
   Project,
@@ -94,6 +111,11 @@ export default function Kanban() {
 
   onMount(() => {
     setIsClient(true);
+    // Heal duplicated state that may already be persisted in localStorage
+    setRepositories((prev) => dedupeRepositories(prev));
+    setSelectedRepositories((prev) => sanitizeSelection(prev, repositories()));
+    setProjects((prev) => dedupeProjects(prev));
+    setVisibleColumns((prev) => [...new Set(prev)]);
     if (projects().length === 0) {
       initializeDefaultColumns();
     }
@@ -112,21 +134,12 @@ export default function Kanban() {
     setProjects(defaultProjects);
   };
 
-  // Helper function to generate a unique ID for a repository
-  const getRepoId = (repo: Repo): string => {
-    if (repo.type === "github") {
-      return `github:${repo.owner}/${repo.repo}`;
-    } else {
-      return `gitlab:${repo.domain}/${repo.projectPath}`;
-    }
-  };
-
   const addRepository = (repo: Repo) => {
-    setRepositories((prev) => [...prev, repo]);
-    const repoId = getRepoId(repo);
-    setSelectedRepositories((prev) => [...prev, repoId]);
+    const isFirst = repositories().length === 0;
+    setRepositories((prev) => addRepo(prev, repo));
+    setSelectedRepositories((prev) => addSelectedRepo(prev, getRepoId(repo)));
     // Auto-hide project management after adding first repository
-    if (repositories().length === 0) {
+    if (isFirst) {
       setShowProjectManagement(false);
     }
   };
@@ -139,63 +152,38 @@ export default function Kanban() {
     addRepository(repo);
   };
 
-  const removeRepository = (index: number) => {
-    const repo = repositories()[index];
-    if (repo) {
-      const repoId = getRepoId(repo);
-      setSelectedRepositories((prev) => prev.filter((id) => id !== repoId));
-    }
-    setRepositories((prev) => prev.filter((_, i) => i !== index));
-  };
-
   const deleteRepository = (repoId: string) => {
-    setRepositories((prev) =>
-      prev.filter((repo) => getRepoId(repo) !== repoId)
-    );
-    setSelectedRepositories((prev) => prev.filter((id) => id !== repoId));
-    setProjects((prev) =>
-      prev.map((project) => ({
-        ...project,
-        issues: [],
-      }))
-    );
+    setRepositories((prev) => removeRepo(prev, repoId));
+    setSelectedRepositories((prev) => removeSelectedRepo(prev, repoId));
+    // Only drop this repository's issues; other repos and custom items stay
+    setProjects((prev) => removeRepoIssues(prev, repoId));
   };
 
   const toggleRepository = async (repoId: string) => {
-    const isCurrentlySelected = selectedRepositories().includes(repoId);
-
-    if (isCurrentlySelected) {
-      // Deselecting - remove issues from this repository
-      setSelectedRepositories((prev) => prev.filter((id) => id !== repoId));
-
-      // Clear all issues from all columns
-      setProjects((prev) =>
-        prev.map((project) => ({ ...project, issues: [] }))
-      );
-
-      // Re-fetch issues from remaining selected repositories
-      if (selectedRepositories().length > 1) {
-        await fetchIssuesFromRepos();
-      }
+    if (selectedRepositories().includes(repoId)) {
+      // Deselecting - remove only the issues from this repository
+      setSelectedRepositories((prev) => removeSelectedRepo(prev, repoId));
+      setProjects((prev) => removeRepoIssues(prev, repoId));
     } else {
-      // Selecting - add to selected repositories
-      setSelectedRepositories((prev) => [...prev, repoId]);
-
-      // Fetch issues from all selected repositories including the new one
+      setSelectedRepositories((prev) => addSelectedRepo(prev, repoId));
       await fetchIssuesFromRepos();
     }
   };
 
   const selectAllRepositories = async () => {
-    setSelectedRepositories(repositories().map((repo) => getRepoId(repo)));
-    // Fetch issues from all repositories
+    setSelectedRepositories(repositories().map(getRepoId));
     await fetchIssuesFromRepos();
   };
 
   const selectNoneRepositories = () => {
     setSelectedRepositories([]);
-    // Clear all issues
-    setProjects((prev) => prev.map((project) => ({ ...project, issues: [] })));
+    // Remove fetched issues but keep custom items
+    setProjects((prev) =>
+      prev.map((project) => ({
+        ...project,
+        issues: project.issues.filter((i) => i.isCustom),
+      }))
+    );
   };
 
   const toggleColumn = (columnId: string) => {
@@ -207,23 +195,17 @@ export default function Kanban() {
   };
 
   const addProject = (project: Project) => {
-    setProjects((prev) => [...prev, project]);
-    setVisibleColumns((prev) => [...prev, project.id]);
+    setProjects((prev) => addColumn(prev, project));
+    setVisibleColumns((prev) => addColumnId(prev, project.id));
   };
 
   const removeProject = (projectId: string) => {
-    setProjects((prev) => prev.filter((p) => p.id !== projectId));
+    setProjects((prev) => removeColumn(prev, projectId));
     setVisibleColumns((prev) => prev.filter((id) => id !== projectId));
   };
 
   const addCustomItem = (projectId: string, item: Issue) => {
-    setProjects((prev) =>
-      prev.map((project) =>
-        project.id === projectId
-          ? { ...project, issues: [...project.issues, item] }
-          : project
-      )
-    );
+    setProjects((prev) => addItem(prev, projectId, item));
   };
 
   const openCustomItemCreator = (projectId: string) => {
@@ -231,117 +213,67 @@ export default function Kanban() {
     setShowCustomItemCreator(true);
   };
 
+  // Monotonic id so that an older, slower sync can't overwrite a newer one
+  let latestFetchId = 0;
+
   const fetchIssuesFromRepos = async () => {
+    const fetchId = ++latestFetchId;
+    const selectedRepos = selectedRepositories();
+    if (selectedRepos.length === 0) return;
+
     setIsLoading(true);
     try {
-      const allIssues: Issue[] = [];
-      const selectedRepos = selectedRepositories();
-
-      if (selectedRepos.length === 0) {
-        setIsLoading(false);
-        return;
-      }
-
-      // Get current projects state before fetching new issues
-      const currentProjects = projects();
-
-      for (const repo of repositories()) {
-        const repoId = getRepoId(repo);
-        if (selectedRepos.includes(repoId)) {
+      const reposToFetch = repositories().filter((repo) =>
+        selectedRepos.includes(getRepoId(repo))
+      );
+      const results = await Promise.all(
+        reposToFetch.map(async (repo) => {
+          const repoId = getRepoId(repo);
           try {
-            if (repo.type === "github") {
-              const issues = await fetchGitHubIssues(
-                repo.owner,
-                repo.repo,
-                repo.author,
-                githubApiKey()
-              );
-              allIssues.push(...issues);
-            } else if (repo.type === "gitlab") {
-              const issues = await fetchGitLabIssues(
-                repo.domain,
-                repo.projectPath,
-                gitlabApiKey()
-              );
-              allIssues.push(...issues);
-            }
+            const issues =
+              repo.type === "github"
+                ? await fetchGitHubIssues(
+                    repo.owner,
+                    repo.repo,
+                    repo.author,
+                    githubApiKey()
+                  )
+                : await fetchGitLabIssues(
+                    repo.domain,
+                    repo.projectPath,
+                    gitlabApiKey()
+                  );
+            return {
+              repoId,
+              issues: issues.map((issue) => ({ ...issue, repoId })),
+            };
           } catch (error) {
             console.error(`Failed to fetch issues from ${repoId}:`, error);
+            return null;
           }
-        }
-      }
-
-      const categorizedIssues = categorizeIssuesByState(
-        allIssues,
-        currentProjects
+        })
       );
 
-      setProjects((prev) => {
-        return prev.map((project) => {
-          const projectIssues = categorizedIssues[project.id] || [];
-          return {
-            ...project,
-            issues: projectIssues,
-          };
-        });
-      });
+      if (fetchId !== latestFetchId) return; // superseded by a newer sync
+
+      const ok = results.filter((r) => r !== null);
+      // Merge into the *current* state, not a snapshot taken before awaiting
+      setProjects((prev) =>
+        mergeFetchedIssues(
+          prev,
+          ok.flatMap((r) => r.issues),
+          ok.map((r) => r.repoId)
+        )
+      );
     } catch (error) {
       console.error("Failed to fetch issues:", error);
     } finally {
-      setIsLoading(false);
+      if (fetchId === latestFetchId) setIsLoading(false);
     }
   };
 
-  const categorizeIssuesByState = (
-    issues: Issue[],
-    existingProjects: Project[]
-  ): Record<string, Issue[]> => {
-    const categorized: Record<string, Issue[]> = {
-      backlog: [],
-      todo: [],
-      "in-progress": [],
-      "code-review": [],
-      blocked: [],
-      done: [],
-    };
-
-    // Create a map of existing issues by their ID for quick lookup
-    const existingIssuesMap = new Map<
-      number,
-      { issue: Issue; columnId: string }
-    >();
-    existingProjects.forEach((project) => {
-      project.issues.forEach((issue) => {
-        existingIssuesMap.set(issue.id, { issue, columnId: project.id });
-      });
-    });
-
-    issues.forEach((issue) => {
-      const existingIssue = existingIssuesMap.get(issue.id);
-
-      if (issue.state === "closed") {
-        // Closed issues always go to Done, regardless of previous position
-        categorized.done.push(issue);
-      } else if (existingIssue) {
-        // Preserve existing column position for open issues
-        categorized[existingIssue.columnId].push(issue);
-      } else {
-        // New open issues go to Backlog
-        categorized.backlog.push(issue);
-      }
-    });
-
-    return categorized;
-  };
-
   const updateProject = (projectId: string, updatedIssues: Issue[]) => {
-    setProjects((prev) =>
-      prev.map((project) =>
-        project.id === projectId
-          ? { ...project, issues: updatedIssues }
-          : project
-      )
-    );
+    setProjects((prev) => updateProjectIssues(prev, projectId, updatedIssues));
   };
 
   const reorderProjects = (reorderedProjects: Project[]) => {

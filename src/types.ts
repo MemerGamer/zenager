@@ -10,6 +10,7 @@ export interface Issue {
   updated_at: string;
   html_url: string;
   isCustom?: boolean; // Flag to identify custom (non-GitHub) items
+  repoId?: string; // Unique key of the repository this issue was fetched from
 }
 
 export interface Project {
