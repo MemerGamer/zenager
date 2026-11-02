@@ -15,11 +15,35 @@ function buildHeaders(apiKey?: string): HeadersInit {
   return headers;
 }
 
+/** Map a raw GitHub REST/Search issue to our Issue shape. */
+export function mapGitHubIssue(issue: any): Issue {
+  return {
+    id: issue.id,
+    title: issue.title,
+    body: issue.body || "",
+    state: issue.state,
+    labels: issue.labels.map((label: any) => ({
+      name: label.name,
+      color: label.color || "#428BCA",
+    })),
+    assignee: issue.assignee
+      ? {
+          login: issue.assignee.login,
+          avatar_url: issue.assignee.avatar_url,
+        }
+      : undefined,
+    created_at: issue.created_at,
+    updated_at: issue.updated_at,
+    closed_at: issue.closed_at ?? null,
+    html_url: issue.html_url,
+  };
+}
+
 export async function fetchGitHubIssues(
   owner: string,
   repo: string,
   author?: string,
-  apiKey?: string
+  apiKey?: string,
 ): Promise<Issue[]> {
   const allIssues: Issue[] = [];
   let page = 1;
@@ -44,7 +68,7 @@ export async function fetchGitHubIssues(
 
       if (!response.ok) {
         throw new Error(
-          `GitHub API error: ${response.status} ${response.statusText}`
+          `GitHub API error: ${response.status} ${response.statusText}`,
         );
       }
 
@@ -57,41 +81,21 @@ export async function fetchGitHubIssues(
       // Filter out pull requests (they have pull_request property)
       const issues = data.filter((item: any) => !item.pull_request);
 
-      const mappedIssues = issues.map(
-        (issue: any): Issue => ({
-          id: issue.id,
-          title: issue.title,
-          body: issue.body || "",
-          state: issue.state,
-          labels: issue.labels.map((label: any) => ({
-            name: label.name,
-            color: label.color || "#428BCA",
-          })),
-          assignee: issue.assignee
-            ? {
-                login: issue.assignee.login,
-                avatar_url: issue.assignee.avatar_url,
-              }
-            : undefined,
-          created_at: issue.created_at,
-          updated_at: issue.updated_at,
-          html_url: issue.html_url,
-        })
-      );
+      const mappedIssues = issues.map(mapGitHubIssue);
 
       allIssues.push(...mappedIssues);
       page++;
 
       if (page > 10) {
         console.warn(
-          `Reached page limit (10) for ${owner}/${repo}. There might be more issues.`
+          `Reached page limit (10) for ${owner}/${repo}. There might be more issues.`,
         );
         break;
       }
     } catch (error) {
       console.error(
         `Failed to fetch issues from ${owner}/${repo} page ${page}:`,
-        error
+        error,
       );
       throw error;
     }
@@ -105,7 +109,7 @@ async function fetchIssuesWithSearchAPI(
   owner: string,
   repo: string,
   author?: string,
-  apiKey?: string
+  apiKey?: string,
 ): Promise<Issue[]> {
   const allIssues: Issue[] = [];
   let page = 1;
@@ -130,7 +134,7 @@ async function fetchIssuesWithSearchAPI(
 
       if (!response.ok) {
         throw new Error(
-          `GitHub Search API error: ${response.status} ${response.statusText}`
+          `GitHub Search API error: ${response.status} ${response.statusText}`,
         );
       }
 
@@ -141,48 +145,28 @@ async function fetchIssuesWithSearchAPI(
       }
 
       // The Search API already filters out pull requests when using is:issue
-      const mappedIssues = data.items.map(
-        (issue: any): Issue => ({
-          id: issue.id,
-          title: issue.title,
-          body: issue.body || "",
-          state: issue.state,
-          labels: issue.labels.map((label: any) => ({
-            name: label.name,
-            color: label.color || "#428BCA",
-          })),
-          assignee: issue.assignee
-            ? {
-                login: issue.assignee.login,
-                avatar_url: issue.assignee.avatar_url,
-              }
-            : undefined,
-          created_at: issue.created_at,
-          updated_at: issue.updated_at,
-          html_url: issue.html_url,
-        })
-      );
+      const mappedIssues = data.items.map(mapGitHubIssue);
 
       allIssues.push(...mappedIssues);
       page++;
 
       if (page > 10) {
         console.warn(
-          `Reached page limit (10) for ${owner}/${repo} search. There might be more issues.`
+          `Reached page limit (10) for ${owner}/${repo} search. There might be more issues.`,
         );
         break;
       }
     } catch (error) {
       console.error(
         `Failed to fetch issues from ${owner}/${repo} search page ${page}:`,
-        error
+        error,
       );
       throw error;
     }
   }
 
   console.log(
-    `Fetched ${allIssues.length} total issues from ${owner}/${repo} search`
+    `Fetched ${allIssues.length} total issues from ${owner}/${repo} search`,
   );
   return allIssues;
 }

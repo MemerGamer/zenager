@@ -8,6 +8,7 @@ export interface Issue {
   assignee?: { login: string; avatar_url: string };
   created_at: string;
   updated_at: string;
+  closed_at?: string | null; // When the issue was closed (Gantt end point)
   html_url: string;
   isCustom?: boolean; // Flag to identify custom (non-GitHub) items
   repoId?: string; // Unique key of the repository this issue was fetched from

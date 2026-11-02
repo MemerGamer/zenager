@@ -102,10 +102,51 @@ function generateColorFromString(str: string): string {
   return hexColor;
 }
 
+/** Map a raw GitLab issue to our Issue shape. */
+export function mapGitLabIssue(issue: any): Issue {
+  return {
+    id: issue.id,
+    title: issue.title,
+    body: issue.description || "",
+    state: issue.state === "opened" ? "open" : "closed",
+    labels: (issue.labels || []).map((label: any) => {
+      let labelName: string;
+      let labelColor: string | undefined;
+
+      // GitLab labels can be strings or objects
+      if (typeof label === "string") {
+        labelName = label;
+        labelColor = undefined; // Will generate color from name
+      } else {
+        // Label is an object
+        labelName = (label as { name?: string }).name ?? String(label);
+        labelColor = (label as { color?: string }).color;
+      }
+
+      const color = labelColor || generateColorFromString(labelName);
+
+      return {
+        name: labelName,
+        color: color,
+      };
+    }),
+    assignee: issue.assignee
+      ? {
+          login: issue.assignee.username || issue.assignee.name,
+          avatar_url: issue.assignee.avatar_url || "",
+        }
+      : undefined,
+    created_at: issue.created_at,
+    updated_at: issue.updated_at,
+    closed_at: issue.closed_at ?? null,
+    html_url: issue.web_url,
+  };
+}
+
 export async function fetchGitLabIssues(
   domain: string,
   projectPath: string,
-  apiKey?: string
+  apiKey?: string,
 ): Promise<Issue[]> {
   const allIssues: Issue[] = [];
   let page = 1;
@@ -131,7 +172,7 @@ export async function fetchGitLabIssues(
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(
-          `GitLab API error: ${response.status} ${response.statusText} - ${errorText}`
+          `GitLab API error: ${response.status} ${response.statusText} - ${errorText}`,
         );
       }
 
@@ -141,65 +182,28 @@ export async function fetchGitLabIssues(
         hasMore = false;
       }
 
-      const mappedIssues = data.map(
-        (issue: any): Issue => ({
-          id: issue.id,
-          title: issue.title,
-          body: issue.description || "",
-          state: issue.state === "opened" ? "open" : "closed",
-          labels: (issue.labels || []).map((label: any) => {
-            let labelName: string;
-            let labelColor: string | undefined;
-
-            // GitLab labels can be strings or objects
-            if (typeof label === "string") {
-              labelName = label;
-              labelColor = undefined; // Will generate color from name
-            } else {
-              // Label is an object
-              labelName = (label as { name?: string }).name ?? String(label);
-              labelColor = (label as { color?: string }).color;
-            }
-
-            const color = labelColor || generateColorFromString(labelName);
-
-            return {
-              name: labelName,
-              color: color,
-            };
-          }),
-          assignee: issue.assignee
-            ? {
-                login: issue.assignee.username || issue.assignee.name,
-                avatar_url: issue.assignee.avatar_url || "",
-              }
-            : undefined,
-          created_at: issue.created_at,
-          updated_at: issue.updated_at,
-          html_url: issue.web_url,
-        })
-      );
+      const mappedIssues = data.map(mapGitLabIssue);
 
       allIssues.push(...mappedIssues);
       page++;
 
       if (page > 10) {
         console.warn(
-          `Reached page limit (10) for ${domain}/${projectPath}. There might be more issues.`
+          `Reached page limit (10) for ${domain}/${projectPath}. There might be more issues.`,
         );
         break;
       }
     } catch (error) {
       console.error(
         `Failed to fetch issues from ${domain}/${projectPath} page ${page}:`,
-        error
+        error,
       );
       throw error;
     }
   }
 
   console.log(
-    `Fetched ${allIssues.length} total issues from ${domain}/${projectPath}`
+    `Fetched ${allIssues.length} total issues from ${domain}/${projectPath}`,
   );
   return allIssues;
 }
