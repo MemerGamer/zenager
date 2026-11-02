@@ -34,7 +34,15 @@ export interface GitLabRepo {
   url?: string;
 }
 
-export type Repo = GitHubRepo | GitLabRepo;
+/** A project that lives only in this app: no tokens, no network. */
+export interface LocalRepo {
+  type: "local";
+  id: string;
+  name: string;
+  description?: string;
+}
+
+export type Repo = GitHubRepo | GitLabRepo | LocalRepo;
 
 // Component prop types
 export interface GitHubConfigProps {
@@ -49,6 +57,12 @@ export interface GitLabConfigProps {
   onClose: () => void;
   gitlabApiKey: string;
   onApiKeyChange: (key: string) => void;
+}
+
+export interface LocalProjectConfigProps {
+  existingRepositories: Repo[];
+  onAddRepository: (repo: LocalRepo) => void;
+  onClose: () => void;
 }
 
 export interface RepositoryDropdownProps {
@@ -90,6 +104,7 @@ export interface ProjectConfigProps {
 
 export interface CustomItemCreatorProps {
   projectId: string;
+  repoId?: string; // Local project the new item belongs to, if any
   onAddItem: (projectId: string, item: Issue) => void;
   onClose: () => void;
 }

@@ -7,21 +7,16 @@ import {
   HiSolidChevronUp,
 } from "solid-icons/hi";
 import type { Repo, RepositoryDropdownProps } from "~/types";
+import { getRepoId } from "~/utils/projectState";
 
 export default function RepositoryDropdown(props: RepositoryDropdownProps) {
   const [isOpen, setIsOpen] = createSignal(false);
   let dropdownRef: HTMLDivElement | undefined;
 
-  const getRepoId = (repo: Repo): string => {
-    if (repo.type === "github") {
-      return `github:${repo.owner}/${repo.repo}`;
-    } else {
-      return `gitlab:${repo.domain}/${repo.projectPath}`;
-    }
-  };
-
   const getRepoDisplayName = (repo: Repo): string => {
-    if (repo.type === "github") {
+    if (repo.type === "local") {
+      return repo.name;
+    } else if (repo.type === "github") {
       return `${repo.owner}/${repo.repo}`;
     } else {
       try {
@@ -36,7 +31,9 @@ export default function RepositoryDropdown(props: RepositoryDropdownProps) {
   };
 
   const getRepoUrl = (repo: Repo): string => {
-    if (repo.type === "github") {
+    if (repo.type === "local") {
+      return "";
+    } else if (repo.type === "github") {
       return repo.url || `https://github.com/${repo.owner}/${repo.repo}/issues`;
     } else {
       return repo.url || `${repo.domain}/${repo.projectPath}/-/issues`;
@@ -151,10 +148,16 @@ export default function RepositoryDropdown(props: RepositoryDropdownProps) {
                                 class={`text-xs px-1.5 py-0.5 rounded ${
                                   repo.type === "gitlab"
                                     ? "bg-orange-900 text-orange-300"
+                                    : repo.type === "local"
+                                    ? "bg-green-900 text-green-300"
                                     : "bg-blue-900 text-blue-300"
                                 }`}
                               >
-                                {repo.type === "gitlab" ? "GitLab" : "GitHub"}
+                                {repo.type === "gitlab"
+                                  ? "GitLab"
+                                  : repo.type === "local"
+                                  ? "Local"
+                                  : "GitHub"}
                               </span>
                             </div>
                             <Show when={repo.type === "github" && repo.author}>
@@ -162,10 +165,16 @@ export default function RepositoryDropdown(props: RepositoryDropdownProps) {
                                 by {repo.type === "github" ? repo.author : ""}
                               </p>
                             </Show>
+                            <Show when={repo.type === "local" && repo.description}>
+                              <p class="text-gray-400 text-xs truncate">
+                                {repo.type === "local" ? repo.description : ""}
+                              </p>
+                            </Show>
                           </div>
                         </div>
 
                         <div class="flex items-center gap-1">
+                          <Show when={repo.type !== "local"}>
                           <a
                             href={getRepoUrl(repo)}
                             target="_blank"
@@ -178,6 +187,7 @@ export default function RepositoryDropdown(props: RepositoryDropdownProps) {
                           >
                             <HiSolidArrowTopRightOnSquare class="w-3 h-3" />
                           </a>
+                          </Show>
                           <button
                             onClick={(e) => handleDelete(repo, e)}
                             class="text-gray-400 hover:text-red-400 p-1 transition-colors"

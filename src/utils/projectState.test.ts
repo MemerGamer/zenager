@@ -5,15 +5,20 @@ import {
   addProject,
   addRepository,
   addSelectedRepo,
+  createLocalRepo,
   dedupeProjects,
   dedupeRepositories,
   getRepoId,
+  getSyncableRepos,
+  getTargetLocalRepoId,
   mergeFetchedIssues,
+  removeLocalProjectItems,
   removeProject,
   removeRepoIssues,
   removeRepository,
   removeSelectedRepo,
   sanitizeSelection,
+  updateProjectIssues,
 } from "./projectState";
 
 const gh = (owner: string, repo: string): GitHubRepo => ({
@@ -185,5 +190,95 @@ describe("columns and issues", () => {
     ps = removeRepoIssues(ps, "a");
     expect(column(ps, "backlog").issues.map((i) => i.id)).toEqual([2]);
     expect(column(ps, "todo").issues.map((i) => i.id)).toEqual([5]);
+  });
+});
+
+describe("local projects", () => {
+  const local = (name: string, existing: Repo[] = []) => {
+    const r = createLocalRepo(existing, name);
+    if (!r.ok) throw new Error(r.error);
+    return r.repo;
+  };
+
+  test("creates a project with trimmed name, slug id and optional description", () => {
+    const r = createLocalRepo([], "  My   Side Project ", "  notes ");
+    expect(r).toEqual({
+      ok: true,
+      repo: { type: "local", id: "my-side-project", name: "My Side Project", description: "notes" },
+    });
+    const noDesc = createLocalRepo([], "x");
+    expect(noDesc.ok && "description" in noDesc.repo).toBe(false);
+  });
+
+  test("rejects empty or whitespace names", () => {
+    expect(createLocalRepo([], "").ok).toBe(false);
+    expect(createLocalRepo([], "   ").ok).toBe(false);
+  });
+
+  test("rejects duplicate names case-insensitively", () => {
+    const a = local("Tasks");
+    expect(createLocalRepo([a], " tasks ").ok).toBe(false);
+  });
+
+  test("ids stay unique when slugs collide", () => {
+    const a = local("a b");
+    const b = local("a-b", [a]);
+    expect(a.id).not.toBe(b.id);
+    expect(getRepoId(a)).not.toBe(getRepoId(b));
+    expect(local("???").id).toBe("project");
+  });
+
+  test("local ids never collide with github/gitlab ids and dedupe works", () => {
+    const a = local("Tasks");
+    const repos = [gh("a", "one"), a].reduce<Repo[]>(addRepository, []);
+    expect(addRepository(repos, a)).toHaveLength(2);
+    expect(getRepoId(a)).toBe("local:tasks");
+  });
+
+  test("sync skips local projects", () => {
+    const a = local("Tasks");
+    const repos: Repo[] = [gh("a", "one"), a, gl("g/x")];
+    const selected = repos.map(getRepoId);
+    expect(getSyncableRepos(repos, selected).map(getRepoId)).toEqual([
+      "github:a/one",
+      "gitlab:https://gitlab.com/g/x",
+    ]);
+    expect(getSyncableRepos([a], [getRepoId(a)])).toEqual([]);
+  });
+
+  test("merging fetched issues does not wipe local project items", () => {
+    const a = local("Tasks");
+    const item = issue(5, getRepoId(a), { isCustom: true });
+    let ps = addCustomItem(columns(), "todo", item);
+    ps = mergeFetchedIssues(ps, [issue(1, "github:a/one")], ["github:a/one"]);
+    expect(column(ps, "todo").issues).toEqual([item]);
+    ps = mergeFetchedIssues(ps, [], ["github:a/one"]);
+    expect(column(ps, "todo").issues).toEqual([item]);
+    // deselecting/removing other repos' issues keeps them too
+    expect(column(removeRepoIssues(ps, "github:a/one"), "todo").issues).toEqual([item]);
+  });
+
+  test("removing a local project removes only its items", () => {
+    const a = local("Tasks");
+    const b = local("Other", [a]);
+    const mine = issue(1, getRepoId(a), { isCustom: true });
+    const theirs = issue(2, getRepoId(b), { isCustom: true });
+    const loose = issue(3, undefined, { isCustom: true });
+    const fetched = issue(4, "github:a/one");
+    let ps = columns();
+    for (const i of [mine, theirs, loose]) ps = addCustomItem(ps, "todo", i);
+    ps = updateProjectIssues(ps, "backlog", [fetched]);
+    ps = removeLocalProjectItems(ps, getRepoId(a));
+    expect(column(ps, "todo").issues).toEqual([theirs, loose]);
+    expect(column(ps, "backlog").issues).toEqual([fetched]);
+  });
+
+  test("new items go to the single selected local project only", () => {
+    const a = local("Tasks");
+    const b = local("Other", [a]);
+    const repos: Repo[] = [gh("a", "one"), a, b];
+    expect(getTargetLocalRepoId(repos, [getRepoId(a), "github:a/one"])).toBe("local:tasks");
+    expect(getTargetLocalRepoId(repos, [getRepoId(a), getRepoId(b)])).toBeUndefined();
+    expect(getTargetLocalRepoId(repos, ["github:a/one"])).toBeUndefined();
   });
 });

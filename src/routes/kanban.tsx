@@ -15,6 +15,7 @@ import {
 import KanbanBoard from "~/components/KanbanBoard";
 import GitHubConfig from "~/components/GitHubConfig";
 import GitLabConfig from "~/components/GitLabConfig";
+import LocalProjectConfig from "~/components/LocalProjectConfig";
 import ProjectConfig from "~/components/ProjectConfig";
 import RepositoryDropdown from "~/components/RepositoryDropdown";
 import ColumnManager from "~/components/ColumnManager";
@@ -36,6 +37,9 @@ import {
   addCustomItem as addItem,
   updateProjectIssues,
   removeRepoIssues,
+  removeLocalProjectItems,
+  getSyncableRepos,
+  getTargetLocalRepoId,
   mergeFetchedIssues,
 } from "~/utils/projectState";
 import type {
@@ -43,11 +47,12 @@ import type {
   Project,
   GitHubRepo,
   GitLabRepo,
+  LocalRepo,
   Repo,
   DefaultColumn,
 } from "~/types";
 
-export type { Issue, Project, GitHubRepo, GitLabRepo, Repo };
+export type { Issue, Project, GitHubRepo, GitLabRepo, LocalRepo, Repo };
 const DEFAULT_COLUMNS: DefaultColumn[] = [
   { id: "backlog", name: "Backlog" },
   { id: "todo", name: "Todo" },
@@ -89,6 +94,7 @@ export default function Kanban() {
   const [isLoading, setIsLoading] = createSignal(false);
   const [showGitHubConfig, setShowGitHubConfig] = createSignal(false);
   const [showGitLabConfig, setShowGitLabConfig] = createSignal(false);
+  const [showLocalConfig, setShowLocalConfig] = createSignal(false);
   const [showProjectConfig, setShowProjectConfig] = createSignal(false);
   const [showColumnManager, setShowColumnManager] = createSignal(false);
   const [showCustomItemCreator, setShowCustomItemCreator] = createSignal(false);
@@ -152,11 +158,17 @@ export default function Kanban() {
     addRepository(repo);
   };
 
+  const addLocalRepository = (repo: LocalRepo) => {
+    addRepository(repo);
+  };
+
   const deleteRepository = (repoId: string) => {
     setRepositories((prev) => removeRepo(prev, repoId));
     setSelectedRepositories((prev) => removeSelectedRepo(prev, repoId));
     // Only drop this repository's issues; other repos and custom items stay
-    setProjects((prev) => removeRepoIssues(prev, repoId));
+    setProjects((prev) =>
+      removeLocalProjectItems(removeRepoIssues(prev, repoId), repoId)
+    );
   };
 
   const toggleRepository = async (repoId: string) => {
@@ -208,6 +220,9 @@ export default function Kanban() {
     setProjects((prev) => addItem(prev, projectId, item));
   };
 
+  const customItemRepoId = () =>
+    getTargetLocalRepoId(repositories(), selectedRepositories());
+
   const openCustomItemCreator = (projectId: string) => {
     setCustomItemProjectId(projectId);
     setShowCustomItemCreator(true);
@@ -218,18 +233,23 @@ export default function Kanban() {
 
   const fetchIssuesFromRepos = async () => {
     const fetchId = ++latestFetchId;
-    const selectedRepos = selectedRepositories();
-    if (selectedRepos.length === 0) return;
+    // Local projects have nothing to fetch
+    const reposToFetch = getSyncableRepos(
+      repositories(),
+      selectedRepositories()
+    );
+    if (reposToFetch.length === 0) {
+      setIsLoading(false);
+      return;
+    }
 
     setIsLoading(true);
     try {
-      const reposToFetch = repositories().filter((repo) =>
-        selectedRepos.includes(getRepoId(repo))
-      );
       const results = await Promise.all(
         reposToFetch.map(async (repo) => {
           const repoId = getRepoId(repo);
           try {
+            if (repo.type === "local") return null;
             const issues =
               repo.type === "github"
                 ? await fetchGitHubIssues(
@@ -311,7 +331,9 @@ export default function Kanban() {
                           (r) => getRepoId(r) === repoId
                         );
                         const displayName = repo
-                          ? repo.type === "github"
+                          ? repo.type === "local"
+                            ? repo.name
+                            : repo.type === "github"
                             ? `${repo.owner}/${repo.repo}`
                             : (() => {
                                 if (!repo.projectPath) {
@@ -339,6 +361,8 @@ export default function Kanban() {
                             class={`${
                               repo?.type === "gitlab"
                                 ? "bg-orange-600 hover:bg-orange-700"
+                                : repo?.type === "local"
+                                ? "bg-green-600 hover:bg-green-700"
                                 : "bg-blue-600 hover:bg-blue-700"
                             } text-white px-2 py-1 rounded text-xs transition-colors`}
                           >
@@ -366,6 +390,13 @@ export default function Kanban() {
               >
                 <HiSolidFolderPlus class="w-4 h-4" />
                 Add GitLab
+              </button>
+              <button
+                onClick={() => setShowLocalConfig(true)}
+                class="bg-green-600 hover:bg-green-700 px-3 py-2 rounded-lg transition-colors flex items-center gap-2 text-sm"
+              >
+                <HiSolidFolderPlus class="w-4 h-4" />
+                Add Local
               </button>
 
               <button
@@ -447,6 +478,13 @@ export default function Kanban() {
                   >
                     <HiSolidFolderPlus class="w-4 h-4" />
                     Add GitLab Project
+                  </button>
+                  <button
+                    onClick={() => setShowLocalConfig(true)}
+                    class="w-full bg-green-600 hover:bg-green-700 px-3 py-2 rounded-md transition-colors flex items-center gap-2 text-sm"
+                  >
+                    <HiSolidFolderPlus class="w-4 h-4" />
+                    Add Local Project
                   </button>
                 </div>
               </div>
@@ -538,6 +576,12 @@ export default function Kanban() {
                   >
                     Add GitLab Issues
                   </button>
+                  <button
+                    onClick={() => setShowLocalConfig(true)}
+                    class="bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg transition-colors"
+                  >
+                    Add Local Project
+                  </button>
                 </div>
               </div>
             }
@@ -573,6 +617,14 @@ export default function Kanban() {
           />
         </Show>
 
+        <Show when={showLocalConfig()}>
+          <LocalProjectConfig
+            existingRepositories={repositories()}
+            onAddRepository={addLocalRepository}
+            onClose={() => setShowLocalConfig(false)}
+          />
+        </Show>
+
         <Show when={showProjectConfig()}>
           <ProjectConfig
             onAddProject={addProject}
@@ -592,6 +644,7 @@ export default function Kanban() {
         <Show when={showCustomItemCreator()}>
           <CustomItemCreator
             projectId={customItemProjectId()}
+            repoId={customItemRepoId()}
             onAddItem={addCustomItem}
             onClose={() => setShowCustomItemCreator(false)}
           />
