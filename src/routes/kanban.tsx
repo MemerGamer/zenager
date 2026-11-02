@@ -181,14 +181,21 @@ export default function Kanban() {
         return;
       }
       // Merge into the current state (existing data wins, duplicates dropped)
-      const merged = mergeImport(currentBoardState(), result.state);
+      const { state: merged, skippedRepos } = mergeImport(
+        currentBoardState(),
+        result.state
+      );
       setRepositories(merged.repositories);
       setSelectedRepositories(merged.selectedRepositories);
       setProjects(merged.projects);
       setVisibleColumns(merged.visibleColumns);
       setImportMessage({
         kind: "success",
-        text: `Imported ${result.state.repositories.length} repositories and ${result.state.projects.length} columns (merged). Toggle a repository to sync its issues.`,
+        text: `Imported ${result.state.repositories.length} repositories and ${result.state.projects.length} columns (merged)${
+          skippedRepos
+            ? `; skipped ${skippedRepos} GitLab ${skippedRepos === 1 ? "project" : "projects"} on hosts not configured here (add one via Add GitLab Project first)`
+            : ""
+        }. Toggle a repository to sync its issues.`,
       });
     } catch {
       setImportMessage({ kind: "error", text: "Import failed: could not read the file" });

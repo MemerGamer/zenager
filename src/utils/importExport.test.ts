@@ -138,7 +138,7 @@ describe("export/import", () => {
 
 describe("mergeImport", () => {
   test("merging same state is idempotent", () => {
-    expect(mergeImport(state(), state())).toEqual(state());
+    expect(mergeImport(state(), state())).toEqual({ state: state(), skippedRepos: 0 });
   });
 
   test("dedupes repos and items, adds new ones", () => {
@@ -153,7 +153,7 @@ describe("mergeImport", () => {
       issues: [issue(3, { isCustom: true, repoId: "local:new" })],
     });
     imported.visibleColumns.push("extra");
-    const m = mergeImport(current, imported);
+    const m = mergeImport(current, imported).state;
     expect(m.repositories).toHaveLength(4);
     expect(m.selectedRepositories).toEqual(["github:o/r", "local:mine", "local:new"]);
     expect(m.projects.map((p) => p.id)).toEqual(["backlog", "custom-1", "extra"]);
@@ -161,25 +161,48 @@ describe("mergeImport", () => {
     expect(m.visibleColumns).toEqual(["backlog", "custom-1", "extra"]);
   });
 
-  test("does not auto-select imported GitLab projects on unknown hosts", () => {
-    const current = state();
+  const otherGl = () => ({
+    type: "gitlab" as const,
+    domain: "https://git.other.example",
+    projectPath: "x/y",
+  });
+
+  test("GitLab repo on unconfigured host is dropped with selection and issues", () => {
     const imported = state();
-    imported.repositories.push({
-      type: "gitlab",
-      domain: "https://git.other.example",
-      projectPath: "x/y",
-    });
+    imported.repositories.push(otherGl());
     imported.selectedRepositories.push("gitlab:https://git.other.example/x/y");
-    const m = mergeImport(current, imported);
-    expect(m.repositories).toHaveLength(4);
-    expect(m.selectedRepositories).not.toContain("gitlab:https://git.other.example/x/y");
+    imported.projects[0].issues.push(
+      issue(50, { repoId: "gitlab:https://git.other.example/x/y" })
+    );
+    const r = mergeImport(state(), imported);
+    expect(r.skippedRepos).toBe(1);
+    expect(r.state).toEqual(state());
+  });
+
+  test("GitLab repo on the configured host is kept", () => {
+    const imported = state();
+    const ok = {
+      type: "gitlab" as const,
+      domain: "https://gitlab.com",
+      projectPath: "g/other",
+    };
+    imported.repositories.push(ok);
+    imported.selectedRepositories.push("gitlab:https://gitlab.com/g/other");
+    imported.projects[0].issues.push(
+      issue(51, { repoId: "gitlab:https://gitlab.com/g/other" })
+    );
+    const r = mergeImport(state(), imported);
+    expect(r.skippedRepos).toBe(0);
+    expect(r.state.repositories).toHaveLength(4);
+    expect(r.state.selectedRepositories).toContain("gitlab:https://gitlab.com/g/other");
+    expect(r.state.projects[0].issues.map((i) => i.id)).toEqual([1, 51]);
   });
 
   test("current state wins and is not mutated", () => {
     const current = state();
     current.projects[0].name = "Mine";
     const before = JSON.stringify(current);
-    const m = mergeImport(current, state());
+    const m = mergeImport(current, state()).state;
     expect(m.projects[0].name).toBe("Mine");
     expect(JSON.stringify(current)).toBe(before);
   });
@@ -191,6 +214,9 @@ describe("mergeImport", () => {
       projects: [],
       visibleColumns: [],
     };
-    expect(mergeImport(empty, state())).toEqual(state());
+    const r = mergeImport(empty, state());
+    // the GitLab repo is dropped: no GitLab host is configured yet
+    expect(r.skippedRepos).toBe(1);
+    expect(r.state.repositories.map((x) => x.type)).toEqual(["github", "local"]);
   });
 });

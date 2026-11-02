@@ -232,20 +232,52 @@ export const parseAndValidateImport = (text: string): ImportResult => {
 
 /* ------------------------------- merge -------------------------------- */
 
+export interface MergeResult {
+  state: BoardState;
+  /** Imported GitLab repositories dropped because of an unconfigured host. */
+  skippedRepos: number;
+}
+
 /**
  * Merge imported state into the current one. Existing data wins: repos and
  * issues already present are kept, columns are matched by id and gain only
  * the imported issues they do not have yet, and unknown columns are appended.
+ *
+ * The single GitLab token is sent to each GitLab repo's own domain, so
+ * imported GitLab repos are only accepted when their domain exactly matches a
+ * domain of a GitLab repo already configured. Others are dropped together
+ * with their selection and issues.
  */
 export const mergeImport = (
   current: BoardState,
   imported: BoardState
-): BoardState => {
+): MergeResult => {
+  const trusted = new Set(
+    current.repositories.flatMap((r) => (r.type === "gitlab" ? [r.domain] : []))
+  );
+  const droppedIds = new Set(
+    imported.repositories
+      .filter((r) => r.type === "gitlab" && !trusted.has(r.domain))
+      .map(getRepoId)
+  );
+  const skippedRepos = droppedIds.size;
+  const accepted: BoardState = {
+    repositories: imported.repositories.filter((r) => !droppedIds.has(getRepoId(r))),
+    selectedRepositories: imported.selectedRepositories.filter(
+      (id) => !droppedIds.has(id)
+    ),
+    projects: imported.projects.map((p) => ({
+      ...p,
+      issues: p.issues.filter((i) => !(i.repoId && droppedIds.has(i.repoId))),
+    })),
+    visibleColumns: imported.visibleColumns,
+  };
+
   const repositories = dedupeRepositories([
     ...current.repositories,
-    ...imported.repositories,
+    ...accepted.repositories,
   ]);
-  const byId = new Map(imported.projects.map((p) => [p.id, p]));
+  const byId = new Map(accepted.projects.map((p) => [p.id, p]));
   const merged = current.projects.map((p) => ({
     ...p,
     issues: [...p.issues, ...(byId.get(p.id)?.issues ?? [])],
@@ -253,28 +285,20 @@ export const mergeImport = (
   const known = new Set(current.projects.map((p) => p.id));
   const projects = dedupeProjects([
     ...merged,
-    ...imported.projects.filter((p) => !known.has(p.id)),
+    ...accepted.projects.filter((p) => !known.has(p.id)),
   ]);
-  // Never auto-select imported GitLab projects on hosts the user has not
-  // configured: selecting triggers a sync that sends the stored token there.
-  const trusted = new Set(
-    current.repositories.flatMap((r) => (r.type === "gitlab" ? [r.domain] : []))
-  );
-  const currentIds = new Set(current.repositories.map(getRepoId));
-  const importedSelection = imported.selectedRepositories.filter((id) => {
-    if (currentIds.has(id)) return true;
-    const repo = imported.repositories.find((r) => getRepoId(r) === id);
-    return !(repo?.type === "gitlab" && !trusted.has(repo.domain));
-  });
   return {
-    repositories,
-    selectedRepositories: sanitizeSelection(
-      [...current.selectedRepositories, ...importedSelection],
-      repositories
-    ),
-    projects,
-    visibleColumns: [
-      ...new Set([...current.visibleColumns, ...imported.visibleColumns]),
-    ].filter((id) => projects.some((p) => p.id === id)),
+    skippedRepos,
+    state: {
+      repositories,
+      selectedRepositories: sanitizeSelection(
+        [...current.selectedRepositories, ...accepted.selectedRepositories],
+        repositories
+      ),
+      projects,
+      visibleColumns: [
+        ...new Set([...current.visibleColumns, ...accepted.visibleColumns]),
+      ].filter((id) => projects.some((p) => p.id === id)),
+    },
   };
 };
