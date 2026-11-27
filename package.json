@@ -22,6 +22,9 @@
     "@tailwindcss/vite": "^4.0.7",
     "tailwindcss": "^4.0.7"
   },
+  "overrides": {
+    "h3": "1.15.9"
+  },
   "engines": {
     "node": ">=22"
   }
